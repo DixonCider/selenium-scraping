@@ -6,16 +6,31 @@ from PIL import Image
 import hashlib
 import selenium
 import time
-from tqdm import tqdm
+import shutil
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
+from datetime import timedelta
 
-def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_between_interactions:int=3, verbose:bool=False):
-    def scroll_to_end(wd, scroll_range, partitions=1000):
+def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, folder_path:str,
+                     sleep_between_interactions:int=3, verbose:bool=False):
+    def scroll_to_end(wd, scroll_range, partitions=1000, scroll_portion=0.6):
         for _ in range(partitions):
             wd.execute_script(f"window.scrollBy(0, {scroll_range / partitions});")
-            time.sleep(sleep_between_interactions/partitions)
+            time.sleep(sleep_between_interactions * scroll_portion / partitions)
+        time.sleep(sleep_between_interactions * (1 - scroll_portion))
+
+    def cache_urls(urls, fpath):
+        with open(fpath, 'a') as f:
+            for url in urls:
+                print(url, file=f)
+
+    def download(urls):
+        newpid = os.fork()
+        if newpid == 0:
+            for url in urls:
+                persist_image(folder_path=folder_path, url=url)
+            os._exit(0)
 
     # build the unsplash query
     search_url = f"https://unsplash.com/s/photos/{query}"
@@ -27,26 +42,39 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_betw
     
     pixel_velocity = 5000
 
-    with tqdm(total=max_links_to_fetch) as pbar:
-        while len(image_urls) < max_links_to_fetch:
-            scroll_to_end(wd, pixel_velocity)
-            time.sleep(5)
-            thumb = wd.find_elements_by_css_selector("img._2zEKz")
-            time.sleep(5)
-            n_unique = len(image_urls)
-            for img in thumb:
-                if verbose:
-                    print(img)
-                    print(img.get_attribute('src'))
-                image_urls.add(img.get_attribute('src'))
-                time.sleep(.5)
-            n_duplicate = len(thumb)
-            n_unique = len(image_urls) - n_unique
-            pbar.update(n_unique)
-
+    n_iter = 0
+    avg_time = 0
+    avg_exp = 0.8
+    while len(image_urls) < max_links_to_fetch:
+        tic = time.clock()
+        scroll_to_end(wd, pixel_velocity)
+        time.sleep(sleep_between_interactions)
+        thumb = wd.find_elements_by_css_selector("img._2zEKz")
+        time.sleep(sleep_between_interactions)
+        n_unique = len(image_urls)
+        new_urls = set()
+        for img in thumb:
             if verbose:
-                print(f"Found: {len(image_urls)} total search results. Extracting links...")
-                print(f"Duplicate: {n_duplicate}, Unique: {n_unique}")
+                print(img)
+                print(img.get_attribute('src'))
+            new_urls.add(img.get_attribute('src'))
+            time.sleep(.5)
+        unique_urls = new_urls - image_urls
+        image_urls = image_urls.union(new_urls)
+        n_duplicate = len(thumb)
+        n_unique = len(image_urls) - n_unique
+
+        cache_urls(unique_urls, os.path.join(folder_path, 'url_cache'))
+        download(unique_urls)
+
+        toc = time.clock()
+        avg_time = (toc - tic) if avg_time == 0 else avg_time * avg_exp + (toc - tic) * (1 - avg_exp) # (avg_time * (n_iter) + (toc - tic)) / (n_iter + 1)
+        n_iter += 1
+        remaining_time = int((max_links_to_fetch - len(image_urls)) * avg_time)
+
+        print(f"total: {len(image_urls)}, duplicate: {n_duplicate}, unique: {n_unique}, time: {toc - tic:.3f}, avg time: {avg_time:.3f}, remaining: {str(timedelta(seconds=remaining_time))}")
+        if n_unique == 0:
+            break
     return image_urls
 
 def persist_image(folder_path:str, url:str, verbose:bool=False):
@@ -60,7 +88,7 @@ def persist_image(folder_path:str, url:str, verbose:bool=False):
     try:
         image_file = io.BytesIO(image_content)
         image = Image.open(image_file).convert('RGB')
-        file_path = os.path.join(folder_path,hashlib.sha1(image_content).hexdigest()[:10] + '.jpg')
+        file_path = os.path.join(folder_path,hashlib.sha1(image_content).hexdigest()[:10] + '.png')
         with open(file_path, 'wb') as f:
             image.save(f, "PNG", quality=100)
         if verbose:
@@ -71,15 +99,19 @@ def persist_image(folder_path:str, url:str, verbose:bool=False):
 def search_and_download(search_term:str,driver_path:str,verbose=False,
                         target_path='./images-UNSPLASH',number_images=200):
     target_folder = os.path.join(target_path,'_'.join(search_term.lower().split(' ')))
-    if not os.path.exists(target_folder):
-        os.makedirs(target_folder)
+    if os.path.exists(target_folder):
+        shutil.rmtree(target_folder)
+    os.makedirs(target_folder)
     options = Options()
     options.headless = 'DISPLAY' not in os.environ # headless if no display environment
     with webdriver.Firefox(executable_path=driver_path, options=options) as wd:
-        res = fetch_image_urls(search_term, number_images, wd=wd, sleep_between_interactions=3, verbose=verbose)
+        res = fetch_image_urls(search_term, number_images, wd=wd, folder_path=target_folder,
+                               sleep_between_interactions=5, verbose=verbose)
         print(f'res count {len(res)}')
+        '''
         for elem in res:
             persist_image(target_folder,elem,verbose=verbose)
+        '''
 
 def main():
     search_terms = ['dog']
