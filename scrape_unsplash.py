@@ -82,11 +82,10 @@ def search_and_download(search_term:str,driver_path:str,
             persist_image(target_folder,elem)
 
 def main():
-    search_terms = ['dogs']
+    search_terms = ['dog']
     driver_path = './geckodriver'
     for search_term in search_terms:
-        # search_and_download(search_term=search_term, driver_path=driver_path, number_images=500)
-        search_and_download(search_term=search_term, driver_path=driver_path, number_images=500)
+        search_and_download(search_term=search_term, driver_path=driver_path, number_images=20000)
 
 if __name__ == '__main__':
     main()
