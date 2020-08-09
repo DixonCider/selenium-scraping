@@ -6,6 +6,7 @@ from PIL import Image
 import hashlib
 import selenium
 import time
+from tqdm import tqdm
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
@@ -24,27 +25,28 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_betw
     image_urls = set()
     
     current_pixel = 0
-    pixel_velocity = 1000
-    pixel_acceleration = 1000
-    while len(image_urls) < max_links_to_fetch:
-        current_pixel += pixel_velocity
-        scroll_to_end(wd, current_pixel)
-        time.sleep(5)
-        thumb = wd.find_elements_by_css_selector("img._2zEKz")
-        time.sleep(5)
-        n_unique = len(image_urls)
-        for img in thumb:
+    pixel_velocity = 3500
+
+    with tqdm(total=max_links_to_fetch) as pbar:
+        while len(image_urls) < max_links_to_fetch:
+            current_pixel += pixel_velocity
+            scroll_to_end(wd, current_pixel)
+            time.sleep(5)
+            thumb = wd.find_elements_by_css_selector("img._2zEKz")
+            time.sleep(5)
+            n_unique = len(image_urls)
+            for img in thumb:
+                if verbose:
+                    print(img)
+                    print(img.get_attribute('src'))
+                image_urls.add(img.get_attribute('src'))
+                time.sleep(.5)
+            n_duplicate = len(thumb)
+            n_unique = len(image_urls) - n_unique
+            pbar.update(n_unique)
             if verbose:
-                print(img)
-                print(img.get_attribute('src'))
-            image_urls.add(img.get_attribute('src'))
-            time.sleep(.5)
-        n_duplicate = len(thumb)
-        n_unique = len(image_urls) - n_unique
-        if n_unique < n_duplicate:
-            pixel_velocity += pixel_acceleration
-        print(f"Duplicate: {n_duplicate}, Unique: {n_unique}")
-        print(f"Found: {len(image_urls)} total search results. Extracting links...")
+                print(f"Duplicate: {n_duplicate}, Unique: {n_unique}")
+                print(f"Found: {len(image_urls)} total search results. Extracting links...")
     return image_urls
 
 def persist_image(folder_path:str, url:str, verbose:bool=False):
@@ -72,7 +74,7 @@ def search_and_download(search_term:str,driver_path:str,
     if not os.path.exists(target_folder):
         os.makedirs(target_folder)
     options = Options()
-    options.headless = True
+    options.headless = 'DISPLAY' not in os.environ # headless if no display environment
     with webdriver.Firefox(executable_path=driver_path, options=options) as wd:
         res = fetch_image_urls(search_term, number_images, wd=wd, sleep_between_interactions=3)
         print(f'res count {len(res)}')
@@ -81,8 +83,9 @@ def search_and_download(search_term:str,driver_path:str,
 
 def main():
     search_terms = ['dogs']
-    driver_path = '/tmp2/cybai/scrape_google/geckodriver'
+    driver_path = './geckodriver'
     for search_term in search_terms:
+        # search_and_download(search_term=search_term, driver_path=driver_path, number_images=500)
         search_and_download(search_term=search_term, driver_path=driver_path, number_images=500)
 
 if __name__ == '__main__':
