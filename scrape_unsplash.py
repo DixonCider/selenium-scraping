@@ -12,9 +12,10 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
 
 def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_between_interactions:int=3, verbose:bool=False):
-    def scroll_to_end(wd, scroll_point):  
-        wd.execute_script(f"window.scrollTo(0, {scroll_point});")
-        time.sleep(sleep_between_interactions)
+    def scroll_to_end(wd, scroll_range, partitions=1000):
+        for _ in range(partitions):
+            wd.execute_script(f"window.scrollBy(0, {scroll_range / partitions});")
+            time.sleep(sleep_between_interactions/partitions)
 
     # build the unsplash query
     search_url = f"https://unsplash.com/s/photos/{query}"
@@ -24,13 +25,11 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_betw
     
     image_urls = set()
     
-    current_pixel = 0
-    pixel_velocity = 3500
+    pixel_velocity = 5000
 
     with tqdm(total=max_links_to_fetch) as pbar:
         while len(image_urls) < max_links_to_fetch:
-            current_pixel += pixel_velocity
-            scroll_to_end(wd, current_pixel)
+            scroll_to_end(wd, pixel_velocity)
             time.sleep(5)
             thumb = wd.find_elements_by_css_selector("img._2zEKz")
             time.sleep(5)
@@ -44,9 +43,10 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, sleep_betw
             n_duplicate = len(thumb)
             n_unique = len(image_urls) - n_unique
             pbar.update(n_unique)
+
             if verbose:
-                print(f"Duplicate: {n_duplicate}, Unique: {n_unique}")
                 print(f"Found: {len(image_urls)} total search results. Extracting links...")
+                print(f"Duplicate: {n_duplicate}, Unique: {n_unique}")
     return image_urls
 
 def persist_image(folder_path:str, url:str, verbose:bool=False):
@@ -68,7 +68,7 @@ def persist_image(folder_path:str, url:str, verbose:bool=False):
     except Exception as e:
         print(f"ERROR - Could not save {url} - {e}")
 
-def search_and_download(search_term:str,driver_path:str,
+def search_and_download(search_term:str,driver_path:str,verbose=False,
                         target_path='./images-UNSPLASH',number_images=200):
     target_folder = os.path.join(target_path,'_'.join(search_term.lower().split(' ')))
     if not os.path.exists(target_folder):
@@ -76,16 +76,16 @@ def search_and_download(search_term:str,driver_path:str,
     options = Options()
     options.headless = 'DISPLAY' not in os.environ # headless if no display environment
     with webdriver.Firefox(executable_path=driver_path, options=options) as wd:
-        res = fetch_image_urls(search_term, number_images, wd=wd, sleep_between_interactions=3)
+        res = fetch_image_urls(search_term, number_images, wd=wd, sleep_between_interactions=3, verbose=verbose)
         print(f'res count {len(res)}')
         for elem in res:
-            persist_image(target_folder,elem)
+            persist_image(target_folder,elem,verbose=verbose)
 
 def main():
     search_terms = ['dog']
     driver_path = './geckodriver'
     for search_term in search_terms:
-        search_and_download(search_term=search_term, driver_path=driver_path, number_images=20000)
+        search_and_download(search_term=search_term, driver_path=driver_path, number_images=20000, verbose=False)
 
 if __name__ == '__main__':
     main()
