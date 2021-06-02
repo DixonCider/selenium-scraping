@@ -42,16 +42,14 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, folder_pat
     
     pixel_velocity = 5000
 
-    n_iter = 0
     avg_time = 0
     avg_exp = 0.8
     while len(image_urls) < max_links_to_fetch:
-        tic = time.clock()
+        tic = time.time()
         scroll_to_end(wd, pixel_velocity)
         time.sleep(sleep_between_interactions)
         thumb = wd.find_elements_by_css_selector("img._2zEKz")
         time.sleep(sleep_between_interactions)
-        n_unique = len(image_urls)
         new_urls = set()
         for img in thumb:
             if verbose:
@@ -62,17 +60,17 @@ def fetch_image_urls(query:str, max_links_to_fetch:int, wd:webdriver, folder_pat
         unique_urls = new_urls - image_urls
         image_urls = image_urls.union(new_urls)
         n_duplicate = len(thumb)
-        n_unique = len(image_urls) - n_unique
+        n_unique = len(unique_urls)
 
         cache_urls(unique_urls, os.path.join(folder_path, 'url_cache'))
         download(unique_urls)
 
-        toc = time.clock()
-        avg_time = (toc - tic) if avg_time == 0 else avg_time * avg_exp + (toc - tic) * (1 - avg_exp) # (avg_time * (n_iter) + (toc - tic)) / (n_iter + 1)
-        n_iter += 1
+        toc = time.time()
+        time_per_url = (toc - tic) / n_unique
+        avg_time = time_per_url if avg_time == 0 else avg_time * avg_exp + time_per_url * (1 - avg_exp)
         remaining_time = int((max_links_to_fetch - len(image_urls)) * avg_time)
 
-        print(f"total: {len(image_urls)}, duplicate: {n_duplicate}, unique: {n_unique}, time: {toc - tic:.3f}, avg time: {avg_time:.3f}, remaining: {str(timedelta(seconds=remaining_time))}")
+        print(f"total: {len(image_urls)}, duplicate: {n_duplicate}, unique: {n_unique}, time: {time_per_url:.3f}, avg time: {avg_time:.3f}, remaining: {str(timedelta(seconds=remaining_time))}")
         if n_unique == 0:
             break
     return image_urls
